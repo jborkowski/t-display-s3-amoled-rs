@@ -13,38 +13,32 @@ keywords = ["rm67162", "amoled"]
 readme = "README.md"
 
 [dependencies]
-hal = { package = "esp32s3-hal", version = "0.15.0", features = [
-    "async",
-    "embassy",
-    "embassy-time-timg0",
-    "rt",
-    
-] }
-esp-backtrace = { version = "0.7.0", features = [
+esp-hal = { version = "0.19.0", features = [ "esp32s3", "async" ] }
+esp-backtrace = { version = "0.13.0", features = [
     "esp32s3",
     "panic-handler",
     "exception-handler",
-    "print-uart",
+    "println",
 ] }
-esp-println = { version = "0.5.0", features = ["esp32s3"] }
-esp-alloc = { version = "0.3.0" }
+esp-println = { version = "0.10.0", features = ["esp32s3"] }
+esp-alloc = { version = "0.4.0" }
 
 embassy-executor = { version = "0.5", features = [
     "nightly",
     "integrated-timers",
     "executor-thread",
 ] }
-embassy-time = "0.3.0"
+embassy-time = "0.3"
 
 
 embedded-hal-1 = { package = "embedded-hal", version = "1.0.0" }
-embedded-graphics = { version = "0.8.0" }
+embedded-graphics = { version = "0.8.1" }
 slint = { version = "1.0.2", default-features = false, features = [
     "compat-1-0",
     "libm",
     "unsafe-single-threaded",
 ] }
-tinygif = "0.0.3"
+tinygif = "0.0.4"
 
 
 [build-dependencies]

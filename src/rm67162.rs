@@ -7,7 +7,7 @@ use embedded_graphics::{
     Pixel,
 };
 use embedded_hal_1::{delay::DelayNs, digital::OutputPin};
-use hal::{
+use esp_hal::{
     peripherals::SPI2,
     spi::{HalfDuplexMode, SpiDataMode, master::{Spi, Command, Address, HalfDuplexReadWrite}},
 };

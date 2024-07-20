@@ -10,9 +10,11 @@ use embedded_graphics::{
 };
 use embedded_hal_1::{delay::DelayNs, digital::OutputPin};
 
-use hal::{
-    prelude::_esp_hal_dma_DmaTransfer,
-    spi::{HalfDuplexMode, SpiDataMode, master::{dma::SpiDma, Command, Address}},
+use esp_hal::{
+    spi::{
+        master::{dma::SpiDma, Address, Command},
+        HalfDuplexMode, SpiDataMode,
+    }, Async, Blocking
 };
 
 use crate::rm67162::Orientation;
@@ -24,7 +26,7 @@ const BUFFER_SIZE: usize = BUFFER_PIXELS * 2;
 static mut DMA_BUFFER: [u8; BUFFER_SIZE] = [0u8; BUFFER_SIZE];
 
 pub type SpiType<'d> =
-    SpiDma<'d, hal::peripherals::SPI2, hal::gdma::Channel0, HalfDuplexMode>;
+    SpiDma<'d, esp_hal::peripherals::SPI2, esp_hal::dma::Channel0, HalfDuplexMode, Blocking>;
 
 pub struct RM67162Dma<'a, CS> {
     spi: Option<SpiType<'a>>,
@@ -36,10 +38,7 @@ impl<CS> RM67162Dma<'_, CS>
 where
     CS: OutputPin,
 {
-    pub fn new<'a>(
-        spi: SpiType<'a>,
-        cs: CS,
-    ) -> RM67162Dma<'a, CS> {
+    pub fn new<'a>(spi: SpiType<'a>, cs: CS) -> RM67162Dma<'a, CS> {
         RM67162Dma {
             spi: Some(spi),
             cs,
@@ -73,11 +72,13 @@ where
                 Command::Command8(0x02, SpiDataMode::Single),
                 Address::Address24(cmd << 8, SpiDataMode::Single),
                 0,
-                txbuf,
+                &txbuf,
             )
             .unwrap();
-        (_, spi) = tx.wait().unwrap();
-        self.spi.replace(spi);
+
+        tx.wait().unwrap();
+        // let (_, spi) = tx.wait().unwrap();
+        // self.spi.replace(spi);
 
         self.cs.set_high().unwrap();
         Ok(())
@@ -141,11 +142,11 @@ where
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                txbuf,
+                &txbuf,
             )
             .unwrap();
-        (_, spi) = tx.wait().unwrap();
-        self.spi.replace(spi);
+        tx.wait().unwrap();
+        // self.spi.replace(spi);
 
         self.cs.set_high().unwrap();
         Ok(())
@@ -161,15 +162,15 @@ where
                 Command::Command8(0x32, SpiDataMode::Single),
                 Address::Address24(0x2C << 8, SpiDataMode::Single),
                 0,
-                txbuf,
+                &txbuf,
             )
             .unwrap()
         } else {
-            spi.write(SpiDataMode::Quad, Command::None, Address::None, 0, txbuf)
+            spi.write(SpiDataMode::Quad, Command::None, Address::None, 0, &txbuf)
                 .unwrap()
         };
-        (_, spi) = tx.wait().unwrap();
-        self.spi.replace(spi);
+        tx.wait().unwrap();
+        // self.spi.replace(spi);
         Ok(())
     }
 
@@ -340,7 +341,7 @@ impl StaticReadBuffer {
     }
 }
 
-unsafe impl hal::prelude::_embedded_dma_ReadBuffer for StaticReadBuffer {
+unsafe impl esp_hal::prelude::_embedded_dma_ReadBuffer for StaticReadBuffer {
     type Word = u8;
 
     #[inline]

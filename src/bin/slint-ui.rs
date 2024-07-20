@@ -12,14 +12,20 @@ use embedded_graphics::pixelcolor::raw::RawU16;
 use embedded_graphics::prelude::{DrawTarget, Point, Size};
 use embedded_graphics::primitives::Rectangle;
 use esp_backtrace as _;
-use esp_println::println;
-use hal::spi::master::Spi;
-use hal::systimer::SystemTimer;
-use hal::{
-    clock::ClockControl, dma::DmaPriority, gdma::Gdma, gpio::NO_PIN, peripherals::Peripherals,
-    prelude::*, timer::TimerGroup, Delay, Rtc, IO,
+use esp_hal::delay::Delay;
+use esp_hal::dma::Dma;
+use esp_hal::dma_buffers;
+use esp_hal::gpio::{Io, Level, Output};
+use esp_hal::rtc_cntl::Rtc;
+use esp_hal::spi::master::prelude::*;
+use esp_hal::spi::master::Spi;
+use esp_hal::system::SystemControl;
+use esp_hal::timer::systimer::SystemTimer;
+use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{
+    clock::ClockControl, dma::DmaPriority, gpio::NO_PIN, peripherals::Peripherals, prelude::*,
 };
-use hal::spi::master::prelude::*;
+use esp_println::println;
 
 use slint::platform::software_renderer::{MinimalSoftwareWindow, Rgb565Pixel};
 use slint::platform::{software_renderer as renderer, Platform};
@@ -31,7 +37,7 @@ use t_display_s3_amoled::rm67162::Orientation;
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
-fn init_heap() {    
+fn init_heap() {
     const HEAP_SIZE: usize = 32 * 1024;
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
@@ -68,7 +74,7 @@ impl Platform for Backend {
 }
 
 struct DisplayWrapper<'a, CS> {
-    display: &'a mut RM67162Dma<'a,CS>,
+    display: &'a mut RM67162Dma<'a, CS>,
     line_buffer: &'a mut [Rgb565Pixel; 536],
 }
 
@@ -98,24 +104,18 @@ where
     }
 }
 
-#[hal::entry]
+#[esp_hal::entry]
 fn main() -> ! {
     init_heap();
     let peripherals = Peripherals::take();
-    let system = peripherals.SYSTEM.split();
+    let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.LPWR);
-    let timer_group0 = TimerGroup::new(
-        peripherals.TIMG0,
-        &clocks,
-    );
+    let mut rtc = Rtc::new(peripherals.LPWR, None);
+    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks, None);
     let mut wdt0 = timer_group0.wdt;
-    let timer_group1 = TimerGroup::new(
-        peripherals.TIMG1,
-        &clocks,
-    );
+    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks, None);
     let mut wdt1 = timer_group1.wdt;
     rtc.rwdt.disable();
     wdt0.disable();
@@ -123,11 +123,11 @@ fn main() -> ! {
     println!("Hello board!");
 
     // Set GPIO4 as an output, and set its state high initially.
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-    let mut led = io.pins.gpio38.into_push_pull_output();
-    let _button = io.pins.gpio21.into_pull_down_input();
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let mut led = Output::new(io.pins.gpio38, Level::Low);
+    let _button = io.pins.gpio21;
 
-    led.set_high().unwrap();
+    led.set_high();
 
     // Initialize the Delay peripheral, and use it to toggle the LED state in a
     // loop.
@@ -144,24 +144,23 @@ fn main() -> ! {
     let d2 = io.pins.gpio48;
     let d3 = io.pins.gpio5;
 
-    let mut cs = cs.into_push_pull_output();
-    cs.set_high().unwrap();
+    let cs = Output::new(cs, Level::High);
+    let mut rst = Output::new(rst, Level::Low);
 
-    let mut rst = rst.into_push_pull_output();
-
-    let dma = Gdma::new(peripherals.DMA);
-    let dma_channel = dma.channel0;
+    let dma = Dma::new(peripherals.DMA);
+    let dma_channel = dma.channel0.configure(false, DmaPriority::Priority0);
 
     // Descriptors should be sized as (BUFFERSIZE / 4092) * 3
-    let mut descriptors = [0u32; 12];
+
+    let (_tx_buffer, tx_descriptors, _rx_buffer, rx_descriptors) = dma_buffers!(32000);
     let spi = Spi::new_half_duplex(
         peripherals.SPI2, // use spi2 host
-        // NO_PIN,       // Some(cs), NOTE: manually control cs
-        75_u32.MHz(), // max 75MHz
-        hal::spi::SpiMode::Mode0,
-        &clocks)
-        .with_pins(Some(sclk),Some(d0),Some(d1),Some(d2),Some(d3),NO_PIN)
-        .with_dma(dma_channel.configure(false, &mut descriptors, &mut [], DmaPriority::Priority0));
+        75_u32.MHz(),     // max 75MHz
+        esp_hal::spi::SpiMode::Mode0,
+        &clocks,
+    )
+    .with_pins(Some(sclk), Some(d0), Some(d1), Some(d2), Some(d3), NO_PIN)
+    .with_dma(dma_channel, tx_descriptors, rx_descriptors);
 
     let mut display = t_display_s3_amoled::rm67162::dma::RM67162Dma::new(spi, cs);
     display.reset(&mut rst, &mut delay).unwrap();
@@ -207,6 +206,6 @@ fn main() -> ! {
             // if no animation is running, wait for the next input event
         }
 
-        led.toggle().unwrap();
+        led.toggle();
     }
 }
